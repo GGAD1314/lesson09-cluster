@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-翻车复现（P12 指令产物）：换元计数据重跑 k-均值——未标准化，当场崩
-预期读数（真实运行锁定）：低收入簇 141 / 中产 111 / 富裕 48
+真实数据重跑：data/mall_customers_yuan.csv（balance 以元计）
+流程与上一轮完全一致：初检 → KMeans(k=3, random_state=42, income+balance) → 聚类图 → 报告
 """
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -40,23 +40,34 @@ ax.scatter(km.cluster_centers_[:, 0], km.cluster_centers_[:, 1],
            zorder=5, label="簇中心")
 ax.set_xlabel("年收入（万元）")
 ax.set_ylabel("账户平均余额（元）")
-ax.set_title("重跑结果：余额以元计、未标准化——低收入簇膨胀至 141（翻车现场）")
+ax.set_title("真实数据重跑：收入-余额聚类（k=3，random_state=42，余额单位：元）")
 ax.legend()
 ax.yaxis.set_major_formatter(lambda v, _: f"{v/10000:.0f}万")
 fig.tight_layout()
 fig.savefig("outputs/02_yuan_fail.png")
 print("\n图已保存: outputs/02_yuan_fail.png")
 
-# ---- 4. 更新分群报告 ----
-report_lines = ["# 分群报告（元计数据重跑——翻车版）", "",
-                "| 簇 | 人数 | 平均年龄 | 平均收入(万) | 平均余额(元) | 平均产品数 |",
-                "|---|---|---|---|---|---|"]
-for c in sorted(df["cluster"].unique()):
+# ---- 4. 更新分群报告（按元计新数据重新统计，业务名按平均收入排序重新起）----
+order = df.groupby("cluster")["income"].mean().sort_values().index.tolist()
+biz = {order[0]: "低收低余的年轻客群", order[1]: "中收中余的主力客群", order[2]: "高收高余的富裕客群"}
+prev = {"低收低余的年轻客群": 125, "中收中余的主力客群": 125, "高收高余的富裕客群": 50}
+
+report_lines = ["# 分群报告（真实导出数据：余额以元计，k=3 重跑）", "",
+                "数据源：data/mall_customers_yuan.csv（300 行 × 7 列，无缺失；balance 为系统原始单位·元）。"
+                "代码与参数同上一轮（特征 income/balance、k=3、random_state=42），仅数据源更换。", "",
+                "| 簇 | 业务名 | 人数 | 占比 | 平均年龄 | 平均收入(万) | 平均余额(元) | 平均产品数 |",
+                "|---|---|---|---|---|---|---|---|"]
+for c in order:
     g = df[df["cluster"] == c]
     report_lines.append(
-        f"| {c} | {len(g)} | {g['age'].mean():.0f} | {g['income'].mean():.1f} | "
-        f"{g['balance'].mean():,.0f} | {g['product_count'].mean():.1f} |")
-report_lines += ["", "对照上一轮 125/125/50：低收入簇吸走 16 个中产——量纲陷阱现场。"]
+        f"| {c} | {biz[c]} | {len(g)} | {len(g)/len(df)*100:.1f}% | {g['age'].mean():.0f} | "
+        f"{g['income'].mean():.1f} | {g['balance'].mean():,.0f} | {g['product_count'].mean():.1f} |")
+report_lines += ["", "## 与上一轮人数对照（上一轮：125 / 125 / 50）", "",
+                 "| 业务名 | 上一轮 | 本轮 | 变化 |",
+                 "|---|---|---|---|"]
+for c in order:
+    n = int((df["cluster"] == c).sum())
+    report_lines.append(f"| {biz[c]} | {prev[biz[c]]} | {n} | {n - prev[biz[c]]:+d} |")
 with open("generated/mall_report.md", "w", encoding="utf-8") as f:
-    f.write("\n".join(report_lines))
+    f.write("\n".join(report_lines) + "\n")
 print("报告已更新: generated/mall_report.md")
